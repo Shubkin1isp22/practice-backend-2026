@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from extensions import db
 from datetime import datetime
-from models import User, Survey
+from models import User, Survey, Question, Option
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     create_access_token,
     jwt_required,
@@ -10,7 +11,6 @@ from flask_jwt_extended import (
 )
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
-surveys_bp = Blueprint("surveys", __name__, url_prefix="/surveys")
 
 @auth_bp.post("/register")
 def register():
@@ -59,5 +59,3 @@ def me():
         "id": user.id,
         "email": user.email
     }
-
-

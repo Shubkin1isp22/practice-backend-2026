@@ -28,7 +28,7 @@ class Survey(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     published_at = db.Column(db.DateTime)
     closed_at = db.Column(db.DateTime)
-
+    question = db.relationship("Question", backref=db.backref("surveys", lazy=True))
 
 class Question(db.Model):
     __tablename__ = "questions"
@@ -41,16 +41,32 @@ class Question(db.Model):
         db.Enum("single", "multiple", "text", name="question_type"),
         nullable=False
     )
-    position = db.Column(db.Integer, nullable=False)
+    sequence = db.Column(db.Integer, nullable=False)
+    
+    survey = db.relationship("Survey", backref=db.backref("questions", lazy=True))
+    options = db.relationship(
+        "Option",
+        back_populates="question",
+        cascade="all, delete-orphan"
+    )
 
 
 class Option(db.Model):
     __tablename__ = "options"
+    __table_args__ = (
+        db.UniqueConstraint("question_id", "position"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    question_id = db.Column(db.Integer, db.ForeignKey("questions.id"), nullable=False)
+    question_id = db.Column(
+        db.Integer,
+        db.ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False
+    )
     text = db.Column(db.Text, nullable=False)
     position = db.Column(db.Integer, nullable=False)
+
+    question = db.relationship("Question", back_populates="options")
 
 
 class Response(db.Model):

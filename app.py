@@ -2,7 +2,7 @@ from flask import Flask
 from config import Config
 from extensions import db, migrate, jwt
 from models import *
-
+from routes import auth_bp, questions_bp, surveys_bp
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -16,10 +16,8 @@ def create_app():
     migrate.init_app(app, db)
     jwt.init_app(app)
 
-    from routes import auth_bp
     app.register_blueprint(auth_bp)
-
-    from surveys import surveys_bp
+    app.register_blueprint(questions_bp)
     app.register_blueprint(surveys_bp)
 
     return app
