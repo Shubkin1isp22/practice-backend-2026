@@ -9,7 +9,7 @@ app = create_app()
 
 with app.app_context():
 
-    # Очистим таблицы (по желанию)
+    # Очистим таблицы
     db.session.query(Option).delete()
     db.session.query(Question).delete()
     db.session.query(Survey).delete()
