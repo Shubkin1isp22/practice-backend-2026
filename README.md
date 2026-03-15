@@ -19,6 +19,8 @@
 	•	POST /surveys/{id}/publish		- Опубликовать опрос
 	•	POST /surveys/{id}/close		- Закрыть опрос
 	•   DELETE /surveys/{id}			- Удалить опрос
+	•	POST /surveys/<id>/publish		- Опубликовать опрос
+	•	POST /surveys/<id>/close		- Закрыть опрос
 ### Questions
 	•	POST /surveys/{id}/questions	- Добавить вопрос к опросу
 	•	GET /surveys/{id}/questions		- Получить данные вопроса
@@ -28,5 +30,8 @@
 	•	POST /questions/{id}/options	- Добавить вариант ответа
 	•	PUT /options/{id}				- Изменить вариант овтета
 	•	DELETE /options/{id}			- Удалить вариант ответа
+### Responses
+	•	POST /surveys/{id}/responses 		– Отправить ответы на опубликованный опрос.
+	•	GET /surveys/{id}/responses/{user_id} – Получить свои ответы на опрос (для авторов или респондентов).
 ### Analytics
 	•	GET /surveys/{id}/results		- Получить статистику опроса
