@@ -86,7 +86,7 @@ with app.app_context():
 
     # Создаём респондента (пользователь, который проходит опрос)
     respondent = User(
-        email="respondent@example.com",
+        email="1respondent@example.com",
         password_hash=generate_password_hash("password123")
     )
     db.session.add(respondent)

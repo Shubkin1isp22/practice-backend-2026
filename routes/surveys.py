@@ -1,9 +1,9 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from extensions import db
 from models import Survey, User, Answer, Question, Option, Response, AnswerOption
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
-
+from sqlalchemy import func
 surveys_bp = Blueprint("surveys", __name__, url_prefix="/surveys")
 
 @surveys_bp.post("/")
@@ -28,17 +28,6 @@ def create_survey():
         "status": survey.status
     }), 201
 
-@surveys_bp.get("/")
-@jwt_required()
-def get_surveys():
-    user_id = int(get_jwt_identity())
-    surveys = Survey.query.filter_by(author_id=user_id).all()
-    return jsonify([{
-        "id": s.id,
-        "title": s.title,
-        "description": s.description,
-        "status": s.status
-    } for s in surveys])
 
 @surveys_bp.get("/<int:survey_id>")
 @jwt_required()
@@ -255,3 +244,213 @@ def submit_response(survey_id):
 
     db.session.commit()
     return {"message": "Response submitted successfully"}
+
+@surveys_bp.get("/<int:survey_id>/stats")
+@jwt_required()
+def survey_stats(survey_id):
+    # Проверяем, что опрос существует
+    survey = Survey.query.get(survey_id)
+    if not survey:
+        return {"error": "Survey not found"}, 404
+
+    # Подсчёт уникальных респондентов
+    respondents_count = db.session.query(func.count(Response.user_id.distinct())) \
+        .filter(Response.survey_id == survey_id).scalar()
+
+    questions_stats = []
+
+    for question in survey.questions:
+        if question.type in ("single", "multiple"):
+            # Статистика для вопросов с выбором
+            total = respondents_count if respondents_count else 1
+            options_data = []
+            for option in question.options:
+                count = db.session.query(func.count(AnswerOption.answer_id)) \
+                    .join(Answer) \
+                    .filter(
+                        AnswerOption.option_id == option.id,
+                        Answer.question_id == question.id,
+                        Answer.response_id == Response.id,
+                        Response.survey_id == survey_id
+                    ).scalar()
+                percent = round((count / total) * 100, 2)
+                options_data.append({
+                    "option_id": option.id,
+                    "text": option.text,
+                    "count": count,
+                    "percent": percent
+                })
+            questions_stats.append({
+                "question_id": question.id,
+                "text": question.text,
+                "type": question.type,
+                "options": options_data
+            })
+
+        elif question.type == "text":
+            # Список текстовых ответов
+            answers = Answer.query.join(Response) \
+                .filter(
+                    Answer.question_id == question.id,
+                    Response.survey_id == survey_id
+                ).all()
+            text_answers = [a.text_answer for a in answers if a.text_answer]
+            questions_stats.append({
+                "question_id": question.id,
+                "text": question.text,
+                "type": "text",
+                "text_answers": text_answers
+            })
+
+    return jsonify({
+        "survey_id": survey.id,
+        "title": survey.title,
+        "status": survey.status,
+        "respondents_count": respondents_count,
+        "questions_stats": questions_stats
+    })
+
+@surveys_bp.get("/<int:survey_id>/export")
+@jwt_required()
+def export_survey_results(survey_id):
+    # Получаем опрос
+    survey = Survey.query.get(survey_id)
+    if not survey:
+        return {"error": "Survey not found"}, 404
+
+    # Подсчёт уникальных респондентов
+    respondents_count = db.session.query(func.count(Response.user_id.distinct())) \
+        .filter(Response.survey_id == survey_id).scalar()
+
+    questions_stats = []
+
+    for question in survey.questions:
+        if question.type in ("single", "multiple"):
+            total = respondents_count if respondents_count else 1
+            options_data = []
+            for option in question.options:
+                count = db.session.query(func.count(AnswerOption.answer_id)) \
+                    .join(Answer) \
+                    .filter(
+                        AnswerOption.option_id == option.id,
+                        Answer.question_id == question.id,
+                        Answer.response_id == Response.id,
+                        Response.survey_id == survey_id
+                    ).scalar()
+                percent = round((count / total) * 100, 2)
+                options_data.append({
+                    "option_id": option.id,
+                    "text": option.text,
+                    "count": count,
+                    "percent": percent
+                })
+            questions_stats.append({
+                "question_id": question.id,
+                "text": question.text,
+                "type": question.type,
+                "options": options_data
+            })
+
+        elif question.type == "text":
+            answers = Answer.query.join(Response) \
+                .filter(
+                    Answer.question_id == question.id,
+                    Response.survey_id == survey_id
+                ).all()
+            text_answers = [a.text_answer for a in answers if a.text_answer]
+            questions_stats.append({
+                "question_id": question.id,
+                "text": question.text,
+                "type": "text",
+                "text_answers": text_answers
+            })
+
+    data = {
+        "survey_id": survey.id,
+        "title": survey.title,
+        "status": survey.status,
+        "respondents_count": respondents_count,
+        "questions_stats": questions_stats
+    }
+
+    # Проверяем, хотим ли скачать как файл
+    if request.args.get("download") == "true":
+        response = make_response(jsonify(data))
+        response.headers["Content-Disposition"] = f'attachment; filename=survey_{survey.id}_results.json'
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+    return jsonify(data)
+
+from flask import request, jsonify
+from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import func
+
+@surveys_bp.get("/")
+@jwt_required(optional=True)  # Если нужно видеть все опросы без логина
+def list_surveys():
+    # Получаем user_id из токена (если есть)
+    user_id = get_jwt_identity()
+    if user_id:
+        user_id = int(user_id)
+
+    # Параметры запроса
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 10, type=int)
+    filter_param = request.args.get("filter")  # my, active, closed
+    sort_by = request.args.get("sort_by", "date")  # date / responses
+    order = request.args.get("order", "desc")      # asc / desc
+
+    # Базовый query
+    surveys_query = Survey.query
+
+    # Фильтрация
+    if filter_param == "my" and user_id:
+        surveys_query = surveys_query.filter(Survey.author_id == user_id)
+    elif filter_param == "active":
+        surveys_query = surveys_query.filter(Survey.status == "published")
+    elif filter_param == "closed":
+        surveys_query = surveys_query.filter(Survey.status == "closed")
+    else:
+        # Если пользователь не залогинен и filter_param нет — показываем только опубликованные
+        if not user_id:
+            surveys_query = surveys_query.filter(Survey.status == "published")
+
+    # Сортировка
+    if sort_by == "date":
+        surveys_query = surveys_query.order_by(
+            Survey.created_at.desc() if order == "desc" else Survey.created_at.asc()
+        )
+    elif sort_by == "responses":
+        # Считаем количество ответов через outerjoin с Response
+        surveys_query = (
+            surveys_query
+            .outerjoin(Response)
+            .group_by(Survey.id)
+            .order_by(func.count(Response.id).desc() if order == "desc" else func.count(Response.id))
+        )
+
+    # Пагинация
+    pagination = surveys_query.paginate(page=page, per_page=per_page, error_out=False)
+
+    # Формируем результат
+    surveys = [
+        {
+            "id": s.id,
+            "title": s.title,
+            "description": s.description,
+            "status": s.status,
+            "created_at": s.created_at.isoformat(),
+            # Добавляем количество ответов, если нужно
+            "response_count": getattr(s, "response_count", None)  
+        }
+        for s in pagination.items
+    ]
+
+    return jsonify({
+        "page": pagination.page,
+        "per_page": pagination.per_page,
+        "total_pages": pagination.pages,
+        "total_items": pagination.total,
+        "surveys": surveys
+    })
